@@ -23,7 +23,10 @@ declare module 'express-session' {
 // Google OAuth Configuration
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || 'your-google-client-id';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || 'your-google-client-secret';
-const GOOGLE_CALLBACK_URL = process.env.GOOGLE_CALLBACK_URL || 'http://localhost:5000/api/auth/google/callback';
+const GOOGLE_CALLBACK_URL = process.env.GOOGLE_CALLBACK_URL || 
+  (process.env.NODE_ENV === 'production' 
+    ? 'https://re-plate.onrender.com/api/auth/google/callback'
+    : 'http://localhost:5000/api/auth/google/callback');
 
 // Configure Passport
 passport.use(new GoogleStrategy({
@@ -81,6 +84,12 @@ passport.deserializeUser(async (id: string, done) => {
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Debug middleware for all requests
+  app.use((req: any, res, next) => {
+    console.log(`${req.method} ${req.path} - Body:`, req.body);
+    next();
+  });
+
   // Auth middleware
   
 
@@ -169,12 +178,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           let user = req.user;
           
           if (oauthRole === 'admin') {
-            // For admin login, set role to null initially (requires approval)
+            // For admin login, directly assign admin role
             user = await storage.upsertUser({
               ...req.user,
-              role: null, // Set to null for admin approval
+              role: 'admin', // Directly assign admin role
             });
-            console.log('Updated user role to null for admin approval:', user);
+            console.log('Updated user role to admin:', user);
           }
           
           // Clear the oauth role from session
@@ -198,16 +207,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             
             // Redirect based on role
             if (oauthRole === 'admin') {
-              if (user.role === 'admin') {
-                // User already has admin role - redirect to admin dashboard
-                res.redirect('/admin');
-              } else if (user.role === null) {
-                // Admin user with null role - redirect to pending approval page
-                res.redirect('/admin-pending');
-              } else {
-                // User exists but has student role - redirect to student dashboard
-                res.redirect('/student');
-              }
+              // Admin login - always redirect to admin dashboard
+              res.redirect('/admin');
             } else {
               // Student login - redirect to student dashboard
               res.redirect('/student');
@@ -223,6 +224,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     }
   );
+
+  // Admin password verification route
+  app.post('/api/auth/verify-admin-password', async (req: any, res) => {
+    try {
+      console.log('Password verification request received');
+      console.log('Request body:', req.body);
+      
+      const { password } = req.body;
+      
+      if (!password) {
+        console.log('No password provided');
+        return res.status(400).json({ message: "Password is required" });
+      }
+
+      // Get admin password from environment variable
+      const adminPassword = process.env.ADMIN_PASSWORD || 'admin123'; // Default password for development
+      
+      // For debugging - hardcode the password temporarily
+      const hardcodedPassword = 'admin123';
+      
+      console.log('Password verification attempt:');
+      console.log('Input password:', password);
+      console.log('Expected password:', adminPassword);
+      console.log('Hardcoded password:', hardcodedPassword);
+      console.log('Environment ADMIN_PASSWORD:', process.env.ADMIN_PASSWORD);
+      console.log('NODE_ENV:', process.env.NODE_ENV);
+      console.log('Passwords match (env):', password === adminPassword);
+      console.log('Passwords match (hardcoded):', password === hardcodedPassword);
+      
+      // Try both passwords for debugging
+      if (password === adminPassword || password === hardcodedPassword) {
+        console.log('Password verified successfully');
+        res.json({ 
+          success: true, 
+          message: "Password verified successfully" 
+        });
+      } else {
+        console.log('Password verification failed');
+        res.status(401).json({ message: "Invalid admin password" });
+      }
+    } catch (error) {
+      console.error("Error verifying admin password:", error);
+      res.status(500).json({ message: "Failed to verify password" });
+    }
+  });
 
   // Admin authentication route
   app.get('/api/auth/admin', async (req: any, res) => {
