@@ -43,8 +43,7 @@ export function MealCard({ meal, onClaim, isLoading = false, userClaims = [] }: 
             {meal.name}
           </h3>
           <Badge 
-            variant={isLowQuantity ? "destructive" : "secondary"}
-            className="ml-2 shrink-0"
+            className="ml-2 shrink-0 bg-forest/10 text-forest border-forest/20 hover:bg-forest/20"
           >
             {meal.quantityAvailable} left
           </Badge>
@@ -61,7 +60,7 @@ export function MealCard({ meal, onClaim, isLoading = false, userClaims = [] }: 
 
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-3">
-            <Badge variant="outline" className="text-blue-600 border-blue-600">
+            <Badge variant="outline" className="text-forest border-forest">
               {meal.claimCount || 0} claimed
             </Badge>
           </div>

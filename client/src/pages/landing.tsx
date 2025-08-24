@@ -41,44 +41,37 @@ export default function Landing() {
             </h1>
             
             {/* Subtitle */}
-            <p className="text-xl lg:text-2xl text-gray-600 dark:text-gray-300 mb-12 max-w-3xl mx-auto leading-relaxed animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
+            <p className="text-xl lg:text-2xl text-gray-600 dark:text-gray-300 mb-8 max-w-3xl mx-auto leading-relaxed animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
               Transform campus dining with our innovative digital platform. 
               <span className="font-semibold text-forest dark:text-forest-light"> Reduce waste, save money, </span>
               and enjoy fresh meals with just a claim code.
             </p>
             
-            {/* CTA Buttons */}
-            <div className="flex flex-col sm:flex-row gap-6 justify-center items-center animate-fade-in-up" style={{ animationDelay: '0.6s' }}>
+                                    {/* Learn More and Login Buttons */}
+            <div className="flex justify-center items-center gap-4 mb-8 animate-fade-in-up" style={{ animationDelay: '0.5s' }}>
               <Button 
-                className="group relative bg-gradient-to-r from-forest to-forest-dark hover:from-forest-dark hover:to-forest text-white px-10 py-4 text-lg font-semibold rounded-2xl shadow-2xl hover:shadow-forest/25 transition-all duration-300 hover:scale-105 border-0"
-                onClick={async () => {
-                  await fetch('/api/seed-demo-data', { method: 'POST' });
-                  const response = await fetch('/api/demo-login/student');
-                  if (response.ok) {
-                    window.location.reload();
-                  }
-                }}
+                className="group relative bg-gradient-to-r from-forest to-forest-dark hover:from-forest-dark hover:to-forest text-white px-8 py-3 text-base font-semibold rounded-xl shadow-lg hover:shadow-forest/25 transition-all duration-300 hover:scale-105 border-0"
+                onClick={() => window.location.href = '/login'}
               >
-                <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                 <span className="relative flex items-center">
-                  Student Login
+                  Login
                   <span className="ml-2 transform group-hover:translate-x-1 transition-transform duration-300">→</span>
                 </span>
               </Button>
               
               <Button 
-                className="group relative bg-white/10 dark:bg-gray-800/50 backdrop-blur-sm border-2 border-forest/30 hover:border-forest text-forest dark:text-forest-light hover:bg-forest/5 dark:hover:bg-forest/10 px-10 py-4 text-lg font-semibold rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-105"
-                onClick={async () => {
-                  await fetch('/api/seed-demo-data', { method: 'POST' });
-                  const response = await fetch('/api/demo-login/admin');
-                  if (response.ok) {
-                    window.location.reload();
+                variant="outline"
+                className="group relative border-2 border-forest text-forest hover:bg-forest hover:text-white px-8 py-3 text-base font-medium rounded-xl shadow-lg hover:shadow-forest/25 transition-all duration-300 hover:scale-105"
+                onClick={() => {
+                  const featuresSection = document.getElementById('features-section');
+                  if (featuresSection) {
+                    featuresSection.scrollIntoView({ behavior: 'smooth' });
                   }
                 }}
               >
                 <span className="relative flex items-center">
-                  Admin Login
-                  <span className="ml-2 transform group-hover:translate-x-1 transition-transform duration-300">→</span>
+                  Learn More
+                  <span className="ml-2 transform group-hover:translate-y-1 transition-transform duration-300">↓</span>
                 </span>
               </Button>
             </div>
@@ -106,7 +99,7 @@ export default function Landing() {
       <StatsSection />
 
       {/* Features Section */}
-      <section className="relative bg-gradient-to-br from-white via-forest/2 to-white dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 py-24 overflow-hidden">
+      <section id="features-section" className="relative bg-gradient-to-br from-white via-forest/2 to-white dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 py-24 overflow-hidden">
         {/* Background decorative elements */}
         <div className="absolute inset-0 opacity-40">
           <div className="absolute top-20 right-20 w-40 h-40 bg-forest/5 rounded-full blur-3xl"></div>

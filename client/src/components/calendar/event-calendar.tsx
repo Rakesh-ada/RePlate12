@@ -21,6 +21,10 @@ import { z } from "zod";
 const eventFormSchema = insertEventSchema.omit({ createdBy: true }).extend({
   startTime: z.string().min(1, "Start time is required"),
   endTime: z.string().min(1, "End time is required"),
+  phoneNumber: z.string()
+    .min(1, "Phone number is required")
+    .regex(/^\+?[1-9]\d{1,14}$/, "Please enter a valid phone number")
+    .refine((val) => val.length >= 10, "Phone number must be at least 10 digits"),
 });
 
 type EventFormData = z.infer<typeof eventFormSchema>;
@@ -35,6 +39,8 @@ export function EventCalendar({ className }: EventCalendarProps) {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
+  const [isVerifyingPhone, setIsVerifyingPhone] = useState(false);
+  const [phoneVerified, setPhoneVerified] = useState(false);
 
   // Fetch events
   const { data: events = [], isLoading: eventsLoading } = useQuery<EventWithCreator[]>({
@@ -135,12 +141,73 @@ export function EventCalendar({ className }: EventCalendarProps) {
     },
   });
 
+  // Phone verification mutation
+  const verifyPhoneMutation = useMutation({
+    mutationFn: async (phoneNumber: string) => {
+      const response = await apiRequest("POST", "/api/verify-phone", { phoneNumber });
+      if (!response.ok) {
+        throw new Error("Failed to verify phone number");
+      }
+      const data = await response.json();
+      return data;
+    },
+    onSuccess: (data) => {
+      if (data.valid) {
+        setPhoneVerified(true);
+        toast({
+          title: "Phone Number Verified",
+          description: "Phone number is valid and belongs to a real person.",
+        });
+      } else {
+        setPhoneVerified(false);
+        toast({
+          title: "Invalid Phone Number",
+          description: "Please enter a valid phone number that belongs to a real person.",
+          variant: "destructive",
+        });
+      }
+    },
+    onError: (error: Error) => {
+      setPhoneVerified(false);
+      toast({
+        title: "Verification Failed",
+        description: "Could not verify phone number. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const onSubmit = (data: EventFormData) => {
+    if (!phoneVerified) {
+      toast({
+        title: "Phone Number Not Verified",
+        description: "Please verify your phone number before creating the event.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     if (editingEvent) {
       updateEventMutation.mutate({ id: editingEvent.id, data });
     } else {
       createEventMutation.mutate(data);
     }
+  };
+
+  const handlePhoneVerification = () => {
+    const phoneNumber = form.getValues("phoneNumber");
+    if (!phoneNumber) {
+      toast({
+        title: "Phone Number Required",
+        description: "Please enter a phone number first.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsVerifyingPhone(true);
+    verifyPhoneMutation.mutate(phoneNumber, {
+      onSettled: () => setIsVerifyingPhone(false),
+    });
   };
 
   const openEditModal = (event: Event) => {
@@ -158,6 +225,7 @@ export function EventCalendar({ className }: EventCalendarProps) {
   const closeModal = () => {
     setIsCreateModalOpen(false);
     setEditingEvent(null);
+    setPhoneVerified(false);
     form.reset();
   };
 
@@ -179,9 +247,9 @@ export function EventCalendar({ className }: EventCalendarProps) {
   };
 
   return (
-    <div className={`space-y-6 ${className}`}>
+    <div className={`space-y-4 ${className}`}>
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold">Event Calendar</h2>
+        <h2 className="text-xl font-bold">Event Calendar</h2>
         <Dialog 
           open={isCreateModalOpen || editingEvent !== null} 
           onOpenChange={(open) => !open && closeModal()}
@@ -252,6 +320,7 @@ export function EventCalendar({ className }: EventCalendarProps) {
                           <Input 
                             {...field} 
                             type="datetime-local"
+                            className="[&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert dark:[&::-webkit-calendar-picker-indicator]:filter-none"
                             data-testid="input-event-start-time"
                           />
                         </FormControl>
@@ -270,6 +339,7 @@ export function EventCalendar({ className }: EventCalendarProps) {
                           <Input 
                             {...field} 
                             type="datetime-local"
+                            className="[&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert dark:[&::-webkit-calendar-picker-indicator]:filter-none"
                             data-testid="input-event-end-time"
                           />
                         </FormControl>
@@ -302,16 +372,32 @@ export function EventCalendar({ className }: EventCalendarProps) {
                   name="phoneNumber"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Phone Number (Optional)</FormLabel>
-                      <FormControl>
-                        <Input 
-                          {...field} 
-                          value={field.value || ""}
-                          type="tel"
-                          placeholder="Enter contact phone number"
-                          data-testid="input-event-phone"
-                        />
-                      </FormControl>
+                      <FormLabel>Phone Number</FormLabel>
+                      <div className="flex gap-2">
+                        <FormControl>
+                          <Input 
+                            {...field} 
+                            type="tel"
+                            placeholder="Enter contact phone number"
+                            data-testid="input-event-phone"
+                            className="flex-1"
+                          />
+                        </FormControl>
+                        <Button
+                          type="button"
+                          onClick={handlePhoneVerification}
+                          disabled={isVerifyingPhone || !field.value}
+                          variant="outline"
+                          className="shrink-0"
+                        >
+                          {isVerifyingPhone ? "Verifying..." : phoneVerified ? "✓ Verified" : "Verify"}
+                        </Button>
+                      </div>
+                      {phoneVerified && (
+                        <p className="text-sm text-green-600 dark:text-green-400">
+                          ✓ Phone number verified and belongs to a real person
+                        </p>
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}
@@ -346,45 +432,45 @@ export function EventCalendar({ className }: EventCalendarProps) {
         </Dialog>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Calendar */}
         <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CalendarDays className="h-5 w-5" />
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <CalendarDays className="h-4 w-4" />
               Calendar View
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-0">
             <Calendar
               mode="single"
               selected={selectedDate}
               onSelect={setSelectedDate}
-              className="rounded-md border"
+              className="rounded-md border [&_.rdp-table]:w-full [&_.rdp-tbody]:space-y-1 [&_.rdp-row]:space-x-1 [&_.rdp-cell]:p-1 [&_.rdp-button]:h-8 [&_.rdp-button]:w-8 [&_.rdp-button]:text-sm"
               modifiers={{
                 hasEvents: (date) => dateHasEvents(date),
               }}
               modifiersStyles={{
-                hasEvents: { backgroundColor: "#e6f3f0", fontWeight: "bold" },
+                hasEvents: { backgroundColor: "#15803d", color: "white", fontWeight: "bold" },
               }}
               data-testid="calendar-view"
             />
             
             {selectedDate && (
-              <div className="mt-4">
-                <h4 className="font-semibold mb-2">
+              <div className="mt-3">
+                <h4 className="font-semibold mb-2 text-sm">
                   Events on {format(selectedDate, "MMMM d, yyyy")}
                 </h4>
                 {selectedDateEvents.length === 0 ? (
-                  <p className="text-gray-500 text-sm">No events on this date</p>
+                  <p className="text-gray-500 text-xs">No events on this date</p>
                 ) : (
-                  <div className="space-y-2">
-                    {selectedDateEvents.map((event) => (
-                      <div 
-                        key={event.id} 
-                        className="p-3 border rounded-lg bg-gray-50 dark:bg-gray-800"
-                        data-testid={`event-card-${event.id}`}
-                      >
+                                      <div className="space-y-2">
+                      {selectedDateEvents.map((event) => (
+                        <div 
+                          key={event.id} 
+                          className="p-2 border rounded-lg bg-gray-50 dark:bg-gray-800"
+                          data-testid={`event-card-${event.id}`}
+                        >
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
                             <h5 className="font-medium">{event.title}</h5>
@@ -441,20 +527,20 @@ export function EventCalendar({ className }: EventCalendarProps) {
 
         {/* Upcoming Events */}
         <Card>
-          <CardHeader>
-            <CardTitle>Upcoming Events</CardTitle>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Upcoming Events</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-0">
             {eventsLoading ? (
-              <p className="text-sm text-gray-500">Loading events...</p>
+              <p className="text-xs text-gray-500">Loading events...</p>
             ) : upcomingEvents.length === 0 ? (
-              <p className="text-sm text-gray-500">No upcoming events</p>
+              <p className="text-xs text-gray-500">No upcoming events</p>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {upcomingEvents.map((event) => (
                   <div 
                     key={event.id} 
-                    className="p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                    className="p-2 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                     data-testid={`upcoming-event-${event.id}`}
                   >
                     <h5 className="font-medium text-sm">{event.title}</h5>

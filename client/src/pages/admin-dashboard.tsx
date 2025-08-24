@@ -20,7 +20,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { insertFoodItemSchema } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import type { FoodItem, FoodDonationWithDetails } from "@shared/schema";
+import type { FoodItem, FoodItemWithCreator, FoodDonationWithDetails } from "@shared/schema";
 
 interface CampusStats {
   totalMealsSaved: number;
@@ -32,8 +32,10 @@ interface CampusStats {
   claimedFood: number;
   carbonFootprintSaved: number;
   waterFootprintSaved: number;
+  currentlyActiveItems: number;
+  totalQuantityAvailable: number;
 }
-import { Plus, Utensils, TrendingUp, DollarSign, Edit, Trash2, MoreHorizontal, ShieldCheck, CheckCircle, Heart, Users, Phone, User, Clock, AlertTriangle, Leaf, Droplets, Recycle, CheckSquare, Package, Calendar } from "lucide-react";
+import { Plus, Utensils, TrendingUp, DollarSign, Edit, Trash2, MoreHorizontal, ShieldCheck, CheckCircle, Heart, Users, Phone, Clock, AlertTriangle, Leaf, Droplets, Recycle, CheckSquare, Package, Calendar } from "lucide-react";
 import { EventCalendar } from "@/components/calendar/event-calendar";
 import { formatTimeRemaining } from "@/lib/qr-utils";
 import { z } from "zod";
@@ -68,15 +70,23 @@ export default function AdminDashboard() {
     ngoPhoneNumber: "",
   });
 
-  // Redirect if not admin
-  if (!authLoading && (!user || user.role !== "admin")) {
+  // Redirect if not admin or pending approval
+  if (!authLoading && (!user || (user.role !== "admin" && user.role !== null))) {
     setTimeout(() => {
-      window.location.href = "/";
+      window.location.href = "/student";
     }, 500);
     return null;
   }
 
-  const { data: myItems = [], isLoading: itemsLoading } = useQuery<FoodItem[]>({
+  // If user has null role (pending admin approval), redirect to pending page
+  if (!authLoading && user && user.role === null) {
+    setTimeout(() => {
+      window.location.href = "/admin-pending";
+    }, 500);
+    return null;
+  }
+
+  const { data: myItems = [], isLoading: itemsLoading } = useQuery<FoodItemWithCreator[]>({
     queryKey: ["/api/food-items/my"],
     enabled: !!user && user.role === "admin",
   });
@@ -86,6 +96,8 @@ export default function AdminDashboard() {
     queryKey: ["/api/donations"],
     enabled: !!user && user.role === "admin",
   });
+
+
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -331,6 +343,8 @@ export default function AdminDashboard() {
     },
   });
 
+
+
   const completeClaimMutation = useMutation({
     mutationFn: async (claimId: string) => {
       const response = await apiRequest("POST", `/api/food-claims/${claimId}/complete`, {});
@@ -399,9 +413,9 @@ export default function AdminDashboard() {
     enabled: !!user && user.role === "admin",
   });
 
-  // Calculate local stats
-  const activeItems = myItems.filter(item => item.isActive).length;
-  const totalQuantity = myItems.reduce((sum, item) => sum + item.quantityAvailable, 0);
+  // Use server-provided stats for accurate data
+  const activeItems = stats?.currentlyActiveItems || 0;
+  const totalQuantity = stats?.totalQuantityAvailable || 0;
 
   if (authLoading) {
     return (
@@ -418,26 +432,27 @@ export default function AdminDashboard() {
     <div className="min-h-screen bg-surface dark:bg-gray-900">
       <Navbar />
       
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-6 py-6">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-            Admin Dashboard
-          </h1>
-          <p className="text-gray-600 dark:text-gray-300">
-            Manage food items and verify student claims
-          </p>
-        </div>
+       
+        
 
         {/* Comprehensive Stats Dashboard */}
-        <div className="space-y-8 mb-8">
+        <div className="space-y-6 mb-6">
+          {/* Personal Canteen Stats */}
+          <div className="mb-4">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-3">
+              Your Canteen Performance
+            </h2>
+          </div>
+          
           {/* Primary Metrics */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <Card>
               <CardContent className="p-4">
                 <div className="text-center">
-                  <p className="text-gray-900 dark:text-white font-semibold text-xl">{stats?.foodProvided || 0}</p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Food Provided</p>
+                  <p className="text-gray-900 dark:text-white font-semibold text-xl">{myItems.length}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Your Items Added</p>
                 </div>
               </CardContent>
             </Card>
@@ -445,8 +460,8 @@ export default function AdminDashboard() {
             <Card>
               <CardContent className="p-4">
                 <div className="text-center">
-                  <p className="text-gray-900 dark:text-white font-semibold text-xl">{stats?.claimedFood || 0}</p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Successfully Claimed</p>
+                  <p className="text-gray-900 dark:text-white font-semibold text-xl">{myItems.reduce((total, item) => total + (item.claimCount || 0), 0)}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Total Claims</p>
                 </div>
               </CardContent>
             </Card>
@@ -454,8 +469,8 @@ export default function AdminDashboard() {
             <Card>
               <CardContent className="p-4">
                 <div className="text-center">
-                  <p className="text-gray-900 dark:text-white font-semibold text-xl">{stats?.wastedFood || 0}</p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Food Wasted</p>
+                  <p className="text-gray-900 dark:text-white font-semibold text-xl">{myItems.filter(item => item.isActive).length}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Active Items</p>
                 </div>
               </CardContent>
             </Card>
@@ -463,39 +478,42 @@ export default function AdminDashboard() {
             <Card>
               <CardContent className="p-4">
                 <div className="text-center">
-                  <p className="text-gray-900 dark:text-white font-semibold text-xl">{activeItems}</p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Currently Active</p>
+                  <p className="text-gray-900 dark:text-white font-semibold text-xl">{myItems.reduce((total, item) => total + item.quantityAvailable, 0)}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Available Quantity</p>
                 </div>
               </CardContent>
             </Card>
           </div>
 
-          {/* Environmental Impact */}
-          <div>
+          {/* Campus-wide Stats */}
+          <div className="mt-8">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+              Campus-wide Impact
+            </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <Card>
+                <CardContent className="p-4">
+                  <div className="text-center">
+                    <p className="text-gray-900 dark:text-white font-semibold text-xl">{stats?.foodProvided || 0}</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">Total Food Provided</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="p-4">
+                  <div className="text-center">
+                    <p className="text-gray-900 dark:text-white font-semibold text-xl">{stats?.claimedFood || 0}</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">Successfully Claimed</p>
+                  </div>
+                </CardContent>
+              </Card>
+
               <Card>
                 <CardContent className="p-4">
                   <div className="text-center">
                     <p className="text-gray-900 dark:text-white font-semibold text-xl">{(stats?.carbonFootprintSaved || 0).toFixed(1)} kg</p>
                     <p className="text-sm text-gray-600 dark:text-gray-400">CO₂ Saved</p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="p-4">
-                  <div className="text-center">
-                    <p className="text-gray-900 dark:text-white font-semibold text-xl">{(stats?.waterFootprintSaved || 0).toLocaleString()} L</p>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">Water Saved</p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="p-4">
-                  <div className="text-center">
-                    <p className="text-gray-900 dark:text-white font-semibold text-xl">{stats?.totalMealsSaved || 0}</p>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">Meals Saved</p>
                   </div>
                 </CardContent>
               </Card>
@@ -514,7 +532,7 @@ export default function AdminDashboard() {
         </div>
 
         {/* Main Content Tabs */}
-        <Tabs defaultValue="verify" className="space-y-6">
+        <Tabs defaultValue="verify" className="space-y-4">
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="verify">Verify Claims</TabsTrigger>
             <TabsTrigger value="manage">Manage Items</TabsTrigger>
@@ -711,6 +729,7 @@ export default function AdminDashboard() {
                               <Input 
                                 type="datetime-local" 
                                 {...field}
+                                className="[&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert dark:[&::-webkit-calendar-picker-indicator]:filter-none"
                                 data-testid="input-available-until"
                               />
                             </FormControl>
@@ -785,7 +804,10 @@ export default function AdminDashboard() {
             {/* Food Items Table */}
             <Card>
           <CardHeader>
-            <CardTitle>Your Food Items</CardTitle>
+            <CardTitle>Your Canteen's Food Items</CardTitle>
+            <p className="text-gray-600 dark:text-gray-400">
+              Manage the food items you've added to the system
+            </p>
           </CardHeader>
           <CardContent>
             {itemsLoading ? (
@@ -823,69 +845,70 @@ export default function AdminDashboard() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Food Item</TableHead>
-                      <TableHead>Canteen</TableHead>
-                      <TableHead>Quantity Available</TableHead>
-                      <TableHead>Expires In</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
+                                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[200px] text-sm">Food Item</TableHead>
+                        <TableHead className="w-[120px] text-sm">Canteen</TableHead>
+                        <TableHead className="w-[100px] text-sm">Quantity</TableHead>
+                        <TableHead className="w-[80px] text-sm">Claims</TableHead>
+                        <TableHead className="w-[100px] text-sm">Expires</TableHead>
+                        <TableHead className="w-[80px] text-sm">Status</TableHead>
+                        <TableHead className="w-[60px] text-sm">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
                   <TableBody>
                     {myItems.map((item) => (
                       <TableRow key={item.id}>
-                        <TableCell>
-                          <div className="flex items-center space-x-3">
-                            <div className="w-12 h-12 bg-gray-200 dark:bg-gray-800 rounded-lg flex-shrink-0 flex items-center justify-center">
-                              {item.imageUrl ? (
-                                <img
-                                  src={item.imageUrl}
-                                  alt={item.name}
-                                  className="w-full h-full object-cover rounded-lg"
-                                />
-                              ) : (
-                                <Utensils className="w-6 h-6 text-gray-400" />
-                              )}
-                            </div>
-                            <div>
-                              <p className="font-medium text-gray-900 dark:text-white">
-                                {item.name}
-                              </p>
-                              <p className="text-sm text-gray-500 dark:text-gray-400 line-clamp-1">
-                                {item.description}
-                              </p>
-                            </div>
-                          </div>
+                                                 <TableCell className="max-w-[200px]">
+                           <div className="flex items-center space-x-2">
+                             <div className="w-8 h-8 bg-gray-200 dark:bg-gray-800 rounded flex-shrink-0 flex items-center justify-center">
+                               {item.imageUrl ? (
+                                 <img
+                                   src={item.imageUrl}
+                                   alt={item.name}
+                                   className="w-full h-full object-cover rounded"
+                                 />
+                               ) : (
+                                 <Utensils className="w-4 h-4 text-gray-400" />
+                               )}
+                             </div>
+                             <div className="min-w-0 flex-1">
+                               <p className="font-medium text-gray-900 dark:text-white text-sm truncate">
+                                 {item.name}
+                               </p>
+                               <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                                 {item.description}
+                               </p>
+                             </div>
+                           </div>
+                         </TableCell>
+                        <TableCell className="text-gray-600 dark:text-gray-400 text-sm">
+                          <span className="truncate block max-w-[120px]">{item.canteenName}</span>
                         </TableCell>
-                        <TableCell className="text-gray-600 dark:text-gray-400">
-                          {item.canteenName}
+                        <TableCell className="text-sm">
+                          <span className="text-gray-900 dark:text-white font-medium">
+                            {item.quantityAvailable}
+                          </span>
                         </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <span className="text-gray-900 dark:text-white font-medium">
-                              {item.quantityAvailable}
-                            </span>
-                            <Badge variant="outline" className="text-green-600 border-green-600 text-xs">
-                              FREE
-                            </Badge>
-                          </div>
+                        <TableCell className="text-sm">
+                          <Badge variant="outline" className="text-forest border-forest text-xs px-2 py-0">
+                            {item.claimCount || 0}
+                          </Badge>
                         </TableCell>
-                        <TableCell className="text-gray-600 dark:text-gray-400">
-                          {formatTimeRemaining(item.availableUntil.toString())}
+                        <TableCell className="text-gray-600 dark:text-gray-400 text-sm">
+                          <span className="truncate block max-w-[100px]">{formatTimeRemaining(item.availableUntil.toString())}</span>
                         </TableCell>
-                        <TableCell>
-                          <Badge variant={item.isActive ? "default" : "secondary"}>
+                        <TableCell className="text-sm">
+                          <Badge variant={item.isActive ? "default" : "secondary"} className="text-xs px-2 py-0">
                             {item.isActive ? "Active" : "Inactive"}
                           </Badge>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-sm">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm" className="w-8 h-8 p-0">
-                                <MoreHorizontal className="h-4 w-4" />
+                              <Button variant="ghost" size="sm" className="w-6 h-6 p-0">
+                                <MoreHorizontal className="h-3 w-3" />
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
@@ -916,33 +939,32 @@ export default function AdminDashboard() {
           <TabsContent value="unclaimed" className="space-y-6">
             {/* Expiry Status */}
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Clock className="w-5 h-5" />
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Clock className="w-4 h-4" />
                   Expiry Status Monitor
                 </CardTitle>
-                <p className="text-gray-600 dark:text-gray-400">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
                   Monitor unclaimed food items approaching expiry. Items automatically transfer to waste after expiry time.
                 </p>
               </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
-                    <div className="flex items-center gap-2 mb-2">
-                      <AlertTriangle className="w-5 h-5 text-red-600" />
-                      <span className="font-medium text-red-800 dark:text-red-200">Expired</span>
+              <CardContent className="pt-0">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
+                    <div className="flex items-center gap-2 mb-1">
+                      <AlertTriangle className="w-4 h-4 text-red-600" />
+                      <span className="font-medium text-red-800 dark:text-red-200 text-sm">Expired</span>
                     </div>
-                    <p className="text-2xl font-bold text-red-800 dark:text-red-200">
+                    <p className="text-xl font-bold text-red-800 dark:text-red-200">
                       {myItems.filter(item => new Date(item.availableUntil) < new Date()).length}
                     </p>
-                    <p className="text-sm text-red-600 dark:text-red-400">Auto-transferred to waste</p>
                   </div>
-                  <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800">
-                    <div className="flex items-center gap-2 mb-2">
-                      <AlertTriangle className="w-5 h-5 text-orange-600" />
-                      <span className="font-medium text-orange-800 dark:text-orange-200">Critical</span>
+                  <div className="p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800">
+                    <div className="flex items-center gap-2 mb-1">
+                      <AlertTriangle className="w-4 h-4 text-orange-600" />
+                      <span className="font-medium text-orange-800 dark:text-orange-200 text-sm">Critical</span>
                     </div>
-                    <p className="text-2xl font-bold text-orange-800 dark:text-orange-200">
+                    <p className="text-xl font-bold text-orange-800 dark:text-orange-200">
                       {myItems.filter(item => {
                         const now = new Date();
                         const expiryTime = new Date(item.availableUntil);
@@ -950,14 +972,13 @@ export default function AdminDashboard() {
                         return timeDiff > 0 && timeDiff <= 30 * 60 * 1000; // 30 minutes
                       }).length}
                     </p>
-                    <p className="text-sm text-orange-600 dark:text-orange-400">Within 30 minutes</p>
                   </div>
-                  <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Clock className="w-5 h-5 text-yellow-600" />
-                      <span className="font-medium text-yellow-800 dark:text-yellow-200">Warning</span>
+                  <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Clock className="w-4 h-4 text-yellow-600" />
+                      <span className="font-medium text-yellow-800 dark:text-yellow-200 text-sm">Warning</span>
                     </div>
-                    <p className="text-2xl font-bold text-yellow-800 dark:text-yellow-200">
+                    <p className="text-xl font-bold text-yellow-800 dark:text-yellow-200">
                       {myItems.filter(item => {
                         const now = new Date();
                         const expiryTime = new Date(item.availableUntil);
@@ -965,14 +986,13 @@ export default function AdminDashboard() {
                         return timeDiff > 30 * 60 * 1000 && timeDiff <= 2 * 60 * 60 * 1000; // 30 min to 2 hours
                       }).length}
                     </p>
-                    <p className="text-sm text-yellow-600 dark:text-yellow-400">Within 2 hours</p>
                   </div>
-                  <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
-                    <div className="flex items-center gap-2 mb-2">
-                      <CheckCircle className="w-5 h-5 text-green-600" />
-                      <span className="font-medium text-green-800 dark:text-green-200">Active</span>
+                  <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                    <div className="flex items-center gap-2 mb-1">
+                      <CheckCircle className="w-4 h-4 text-green-600" />
+                      <span className="font-medium text-green-800 dark:text-green-200 text-sm">Active</span>
                     </div>
-                    <p className="text-2xl font-bold text-green-800 dark:text-green-200">
+                    <p className="text-xl font-bold text-green-800 dark:text-green-200">
                       {myItems.filter(item => {
                         const now = new Date();
                         const expiryTime = new Date(item.availableUntil);
@@ -980,7 +1000,6 @@ export default function AdminDashboard() {
                         return timeDiff > 2 * 60 * 60 * 1000; // More than 2 hours
                       }).length}
                     </p>
-                    <p className="text-sm text-green-600 dark:text-green-400">Available for claims</p>
                   </div>
                 </div>
               </CardContent>
@@ -991,10 +1010,10 @@ export default function AdminDashboard() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <AlertTriangle className="w-5 h-5" />
-                  Unclaimed Food Items
+                  Your Unclaimed Food Items
                 </CardTitle>
                 <p className="text-gray-600 dark:text-gray-400">
-                  Items that haven't been claimed will automatically transfer to waste after expiry time.
+                  Monitor your items that haven't been claimed. They will automatically transfer to waste after expiry time.
                 </p>
               </CardHeader>
               <CardContent>
@@ -1018,11 +1037,11 @@ export default function AdminDashboard() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Food Item</TableHead>
-                          <TableHead>Quantity Available</TableHead>
-                          <TableHead>Time Until Expiry</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Auto Transfer</TableHead>
+                          <TableHead className="w-[200px] text-sm">Food Item</TableHead>
+                          <TableHead className="w-[100px] text-sm">Quantity</TableHead>
+                          <TableHead className="w-[120px] text-sm">Time Until Expiry</TableHead>
+                          <TableHead className="w-[100px] text-sm">Status</TableHead>
+                          <TableHead className="w-[150px] text-sm">Auto Transfer</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1060,30 +1079,30 @@ export default function AdminDashboard() {
                           
                           return (
                             <TableRow key={item.id}>
-                              <TableCell>
-                                <div className="flex items-center space-x-3">
-                                  <div className="w-12 h-12 bg-gray-200 dark:bg-gray-800 rounded-lg flex-shrink-0 flex items-center justify-center">
+                              <TableCell className="max-w-[200px]">
+                                <div className="flex items-center space-x-2">
+                                  <div className="w-8 h-8 bg-gray-200 dark:bg-gray-800 rounded flex-shrink-0 flex items-center justify-center">
                                     {item.imageUrl ? (
                                       <img
                                         src={item.imageUrl}
                                         alt={item.name}
-                                        className="w-full h-full object-cover rounded-lg"
+                                        className="w-full h-full object-cover rounded"
                                       />
                                     ) : (
-                                      <Utensils className="w-6 h-6 text-gray-400" />
+                                      <Utensils className="w-4 h-4 text-gray-400" />
                                     )}
                                   </div>
-                                  <div>
-                                    <p className="font-medium text-gray-900 dark:text-white">
+                                  <div className="min-w-0 flex-1">
+                                    <p className="font-medium text-gray-900 dark:text-white text-sm truncate">
                                       {item.name}
                                     </p>
-                                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
                                       {item.canteenName}
                                     </p>
                                   </div>
                                 </div>
                               </TableCell>
-                              <TableCell>
+                              <TableCell className="text-sm">
                                 <div className="flex flex-col">
                                   <span className="text-gray-900 dark:text-white font-medium">
                                     {item.quantityAvailable}
@@ -1093,55 +1112,55 @@ export default function AdminDashboard() {
                                   )}
                                 </div>
                               </TableCell>
-                              <TableCell>
-                                <span className={`font-medium ${statusColor}`}>
+                              <TableCell className="text-sm">
+                                <span className={`font-medium ${statusColor} truncate block max-w-[100px]`}>
                                   {formatTimeRemaining(item.availableUntil.toString())}
                                 </span>
                               </TableCell>
-                              <TableCell>
-                                <Badge variant={statusVariant}>
+                              <TableCell className="text-sm">
+                                <Badge variant={statusVariant} className="text-xs px-2 py-0">
                                   {status}
                                 </Badge>
                               </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-2">
+                              <TableCell className="text-sm">
+                                <div className="flex items-center gap-1">
                                   {isExpired ? (
                                     <div className="flex flex-col gap-1">
-                                      <Badge variant="outline" className="text-red-600 border-red-600">
+                                      <Badge variant="outline" className="text-red-600 border-red-600 text-xs px-2 py-0">
                                         <AlertTriangle className="w-3 h-3 mr-1" />
                                         Auto-transferred
                                       </Badge>
                                     </div>
                                   ) : isExpiringCritical ? (
                                     <div className="flex flex-col gap-1">
-                                      <Badge variant="outline" className="text-red-600 border-red-600">
+                                      <Badge variant="outline" className="text-red-600 border-red-600 text-xs px-2 py-0">
                                         <AlertTriangle className="w-3 h-3 mr-1" />
-                                        Transfer in {Math.ceil(timeDiff / (60 * 1000))}min
+                                        {Math.ceil(timeDiff / (60 * 1000))}min
                                       </Badge>
                                     </div>
                                   ) : isExpiringWarning ? (
                                     <div className="flex flex-col gap-1">
-                                      <Badge variant="outline" className="text-yellow-600 border-yellow-600">
+                                      <Badge variant="outline" className="text-yellow-600 border-yellow-600 text-xs px-2 py-0">
                                         <Clock className="w-3 h-3 mr-1" />
-                                        Transfer in {Math.ceil(timeDiff / (60 * 1000))}min
+                                        {Math.ceil(timeDiff / (60 * 1000))}min
                                       </Badge>
-                                      <span className="text-xs text-yellow-600">Monitor closely</span>
+
                                     </div>
                                   ) : isExpiringSoon ? (
                                     <div className="flex flex-col gap-1">
-                                      <Badge variant="outline" className="text-yellow-600 border-yellow-600">
+                                      <Badge variant="outline" className="text-yellow-600 border-yellow-600 text-xs px-2 py-0">
                                         <Clock className="w-3 h-3 mr-1" />
-                                        Transfer in {Math.ceil(timeDiff / (60 * 60 * 1000))}hr
+                                        {Math.ceil(timeDiff / (60 * 60 * 1000))}hr
                                       </Badge>
-                                      <span className="text-xs text-yellow-600">Prepare for transfer</span>
+
                                     </div>
                                   ) : (
                                     <div className="flex flex-col gap-1">
-                                      <Badge variant="outline" className="text-blue-600 border-blue-600">
+                                      <Badge variant="outline" className="text-blue-600 border-blue-600 text-xs px-2 py-0">
                                         <Clock className="w-3 h-3 mr-1" />
-                                        Auto-transfer enabled
+                                        Enabled
                                       </Badge>
-                                      <span className="text-xs text-blue-600">System monitored</span>
+
                                     </div>
                                   )}
                                 </div>
@@ -1156,6 +1175,8 @@ export default function AdminDashboard() {
               </CardContent>
             </Card>
           </TabsContent>
+
+
 
           <TabsContent value="calendar" className="space-y-6">
             <EventCalendar />

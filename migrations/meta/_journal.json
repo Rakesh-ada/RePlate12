@@ -8,6 +8,27 @@
       "when": 1755621035728,
       "tag": "0000_empty_harry_osborn",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1755993212604,
+      "tag": "0001_petite_doctor_strange",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1756010185329,
+      "tag": "0002_chemical_thunderbolts",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1756023926479,
+      "tag": "0003_needy_golden_guardian",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -18,7 +18,7 @@ import { QrCode, Clock, CheckCircle, X } from "lucide-react";
 import { formatTimeRemaining } from "@/lib/qr-utils";
 
 export default function StudentDashboard() {
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, isLoading: authLoading, refetch } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [selectedMeal, setSelectedMeal] = useState<string | null>(null);
@@ -26,12 +26,35 @@ export default function StudentDashboard() {
   const [claimedMeal, setClaimedMeal] = useState<(FoodClaimWithDetails & { foodItem: any }) | null>(null);
   const [canteenFilter, setCanteenFilter] = useState("all");
 
-  // Redirect to login if not authenticated
-  if (!authLoading && !user) {
-    setTimeout(() => {
-      window.location.href = "/api/login";
-    }, 500);
-    return null;
+  // Try to refetch auth data if not authenticated and not loading
+  React.useEffect(() => {
+    console.log('StudentDashboard - Auth state:', { authLoading, user });
+    
+    if (!authLoading && !user) {
+      console.log('StudentDashboard - No user found, trying to refetch...');
+      // Try to refetch authentication data
+      refetch();
+      
+      // If still not authenticated after a delay, redirect to login
+      const timer = setTimeout(() => {
+        console.log('StudentDashboard - Still no user after delay, redirecting to login');
+        window.location.href = "/login";
+      }, 2000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [authLoading, user, refetch]);
+
+  // Show loading while checking authentication
+  if (authLoading || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-forest mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading dashboard...</p>
+        </div>
+      </div>
+    );
   }
 
   const { data: foodItems = [], isLoading: itemsLoading } = useQuery<FoodItemWithCreator[]>({
@@ -113,7 +136,7 @@ export default function StudentDashboard() {
       return false;
     }
     
-    // Only show items with available quantity
+    // Only show items with available quantity (already calculated by backend)
     if (item.quantityAvailable <= 0) {
       return false;
     }
@@ -141,12 +164,7 @@ export default function StudentDashboard() {
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-            Student Dashboard
-          </h1>
-          <p className="text-gray-600 dark:text-gray-300">
-            Browse and claim meals from campus canteens
-          </p>
+          
         </div>
 
         <Tabs defaultValue="browse" className="space-y-6">

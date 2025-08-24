@@ -3,6 +3,7 @@ import express, { type Request, Response, NextFunction, RequestHandler } from "e
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import session, { Session, SessionData } from 'express-session';
+import passport from 'passport';
 
 declare module 'express-session' {
   interface SessionData {
@@ -38,17 +39,82 @@ const sessionMiddleware: RequestHandler = (req, res, next) => {
     sessionId = Math.random().toString(36).substring(2, 15);
     res.cookie('connect.sid', sessionId, { 
       httpOnly: true, 
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      path: '/',
+      sameSite: 'lax'
     });
   }
+
+  console.log('Session middleware - Raw cookies:', req.headers.cookie);
+  console.log('Session middleware - Extracted session ID:', sessionId);
+
+  console.log('Session middleware - Session ID:', sessionId);
+  console.log('Session middleware - Existing sessions:', Object.keys(sessions));
 
   // Initialize session if it doesn't exist
   if (!sessions[sessionId]) {
     sessions[sessionId] = {};
+    console.log('Session middleware - Created new session');
+  } else {
+    console.log('Session middleware - Using existing session:', sessions[sessionId]);
   }
 
   // Add session to request
   req.session = sessions[sessionId];
+  
+  // Add session ID property (required by Passport.js)
+  req.session.id = sessionId;
+  
+  // Add session save method
+  req.session.save = (callback: (err?: any) => void) => {
+    console.log('Session save called for session ID:', sessionId);
+    sessions[sessionId] = req.session;
+    console.log('Session saved:', sessions[sessionId]);
+    callback();
+  };
+  
+  // Add session destroy method
+  req.session.destroy = (callback: (err?: any) => void) => {
+    console.log('Session destroy called for session ID:', sessionId);
+    delete sessions[sessionId];
+    res.clearCookie('connect.sid', { path: '/' });
+    callback();
+  };
+  
+  // Add session regenerate method (required by Passport.js)
+  req.session.regenerate = (callback: (err?: any) => void) => {
+    console.log('Session regenerate called for session ID:', sessionId);
+    const oldSession = { ...req.session };
+    delete sessions[sessionId];
+    
+    // Generate new session ID
+    const newSessionId = Math.random().toString(36).substring(2, 15);
+    sessions[newSessionId] = oldSession;
+    
+    // Update cookie
+    res.cookie('connect.sid', newSessionId, { 
+      httpOnly: true, 
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    });
+    
+    // Update request session
+    req.session = sessions[newSessionId];
+    console.log('Session regenerated with new ID:', newSessionId);
+    callback();
+  };
+  
+  // Add session reload method
+  req.session.reload = (callback: (err?: any) => void) => {
+    console.log('Session reload called for session ID:', sessionId);
+    // For in-memory sessions, reload is just a no-op
+    callback();
+  };
+  
+  // Add session touch method
+  req.session.touch = () => {
+    console.log('Session touch called for session ID:', sessionId);
+    // Update session timestamp if needed
+  };
   
   // Clean up old sessions (optional)
   const oneDay = 24 * 60 * 60 * 1000;
@@ -64,6 +130,10 @@ const sessionMiddleware: RequestHandler = (req, res, next) => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(sessionMiddleware);
+
+// Initialize Passport
+app.use(passport.initialize());
+app.use(passport.session());
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   const start = Date.now();

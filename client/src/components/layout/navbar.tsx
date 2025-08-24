@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Link } from "wouter";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 
 export function Navbar() {
   const { user, isAuthenticated } = useAuth();
@@ -37,20 +38,32 @@ export function Navbar() {
           {/* User Info and Actions */}
           <div className="flex items-center space-x-4">
             {!isAuthenticated && (
-              <a
-                href="https://replate-ngo.onrender.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-4 py-2 text-sm font-medium text-forest hover:text-forest-dark transition-colors duration-200"
-              >
-                For NGOs
-              </a>
+              <>
+                <a
+                  href="https://replate-ngo.onrender.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2 text-sm font-medium text-forest hover:text-forest-dark transition-colors duration-200"
+                >
+                  For NGOs
+                </a>
+                <div className="flex items-center space-x-2">
+                  <Link href="/login">
+                    <Button className="bg-forest hover:bg-forest-dark text-white px-4 py-2 rounded-xl font-medium transition-all duration-300 hover:scale-105">
+                      Login
+                    </Button>
+                  </Link>
+                </div>
+              </>
             )}
             {isAuthenticated && user ? (
               <>
                 
                 
                 <div className="flex items-center space-x-3">
+                  {/* Notification Bell */}
+                  <NotificationBell />
+                  
                   {user.role === "student" && (
                     <Link href="/student">
                       <Button className="bg-forest/10 hover:bg-forest/20 text-forest dark:bg-forest/20 dark:hover:bg-forest/30 dark:text-forest-light border-forest/20 px-4 py-2 rounded-xl font-medium transition-all duration-300 hover:scale-105">

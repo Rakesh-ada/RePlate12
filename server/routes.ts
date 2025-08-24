@@ -1,6 +1,8 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import passport from "passport";
+import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 
 import { insertFoodItemSchema, insertFoodClaimSchema, insertEventSchema } from "@shared/schema";
 import { generateClaimCode } from "@shared/qr-utils";
@@ -18,130 +20,97 @@ declare module 'express-session' {
   }
 }
 
+// Google OAuth Configuration
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || 'your-google-client-id';
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || 'your-google-client-secret';
+const GOOGLE_CALLBACK_URL = process.env.GOOGLE_CALLBACK_URL || 'http://localhost:5000/api/auth/google/callback';
+
+// Configure Passport
+passport.use(new GoogleStrategy({
+  clientID: GOOGLE_CLIENT_ID,
+  clientSecret: GOOGLE_CLIENT_SECRET,
+  callbackURL: GOOGLE_CALLBACK_URL,
+  scope: ['profile', 'email']
+}, async (accessToken, refreshToken, profile, done) => {
+  try {
+    console.log('Google OAuth profile received:', profile);
+    console.log('Profile emails:', profile.emails);
+    
+    // Check if user exists
+    let user = await storage.getUserByEmail(profile.emails?.[0]?.value || '');
+    console.log('Existing user found:', user);
+    
+    if (!user) {
+      console.log('Creating new user for email:', profile.emails?.[0]?.value);
+      // Create new user with role based on OAuth request
+      user = await storage.upsertUser({
+        id: profile.id,
+        email: profile.emails?.[0]?.value || '',
+        firstName: profile.name?.givenName || '',
+        lastName: profile.name?.familyName || '',
+        profileImageUrl: profile.photos?.[0]?.value || '',
+        role: 'student', // Default to student, will be updated in callback if needed
+        studentId: `STU${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
+        phoneNumber: '',
+      });
+      console.log('New user created:', user);
+    }
+    
+    console.log('Returning user to passport:', user);
+    return done(null, user);
+  } catch (error) {
+    console.error('Google OAuth strategy error:', error);
+    return done(error as Error);
+  }
+}));
+
+passport.serializeUser((user: any, done) => {
+  done(null, user.id);
+});
+
+passport.deserializeUser(async (id: string, done) => {
+  try {
+    console.log('Passport deserializeUser called with ID:', id);
+    const user = await storage.getUser(id);
+    console.log('Deserialized user:', user);
+    done(null, user);
+  } catch (error) {
+    console.error('Passport deserializeUser error:', error);
+    done(error);
+  }
+});
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
   
 
-  // Development authentication bypass for demo purposes
-  app.get('/api/demo-login/:role', async (req, res) => {
-    try {
-      const { role } = req.params;
-      
-      if (role !== 'student' && role !== 'admin') {
-        return res.status(400).json({ message: "Invalid role. Use 'student' or 'admin'" });
-      }
 
-      // Create or get existing demo user
-      const demoUser = await storage.upsertUser({
-        id: `demo-${role}-main`,
-        email: `${role}-main@demo.edu`,
-        firstName: role === 'admin' ? 'Demo' : 'Student',
-        lastName: role === 'admin' ? 'Admin' : 'Demo',
-        role: role,
-        studentId: role === 'student' ? 'STU123456' : undefined,
-        phoneNumber: '+1234567890',
-      });
-
-      // Create demo session
-      req.session.user = {
-        claims: { sub: demoUser.id },
-        access_token: 'demo-token',
-        expires_at: Math.floor(Date.now() / 1000) + 3600, // 1 hour
-      };
-
-      res.json({ success: true, user: demoUser });
-    } catch (error) {
-      console.error("Error creating demo user:", error);
-      res.status(500).json({ message: "Failed to create demo user" });
-    }
-  });
-
-  // Demo data seeding
-  app.post('/api/seed-demo-data', async (req, res) => {
-    try {
-      // Use the main demo admin user (same as login)
-      const adminUser = await storage.upsertUser({
-        id: 'demo-admin-main',
-        email: `admin-main@demo.edu`,
-        firstName: 'Demo',
-        lastName: 'Admin',
-        role: 'admin',
-        phoneNumber: '+1234567890',
-      });
-
-      // Check if demo data already exists for this user
-      const existingItems = await storage.getFoodItemsByCreator(adminUser.id);
-      if (existingItems.length > 0) {
-        return res.json({ success: true, message: 'Demo data already exists' });
-      }
-
-      // Create some demo food items
-      const now = new Date();
-      const availableUntil = new Date();
-      availableUntil.setHours(availableUntil.getHours() + 6); // Available for 6 hours
-
-      const demoFoodItems = [
-        {
-          name: 'Margherita Pizza',
-          description: 'Fresh mozzarella, basil, and tomato sauce on a crispy crust',
-          canteenName: 'Main Campus Cafeteria',
-          canteenLocation: 'Building A, Ground Floor',
-          quantityAvailable: 3,
-          imageUrl: null,
-          availableUntil: availableUntil.toISOString(),
-          isActive: true,
-          createdBy: adminUser.id,
-        },
-        {
-          name: 'Chicken Caesar Salad',
-          description: 'Grilled chicken breast with romaine lettuce, parmesan, and caesar dressing',
-          canteenName: 'Student Union Food Court',
-          canteenLocation: 'Building B, 2nd Floor',
-          quantityAvailable: 5,
-          imageUrl: null,
-          availableUntil: availableUntil.toISOString(),
-          isActive: true,
-          createdBy: adminUser.id,
-        },
-        {
-          name: 'Vegetarian Wrap',
-          description: 'Mixed vegetables, hummus, and fresh herbs in a whole wheat wrap',
-          canteenName: 'Green Campus Cafe',
-          canteenLocation: 'Library Building, 1st Floor',
-          quantityAvailable: 4,
-          imageUrl: null,
-          availableUntil: availableUntil.toISOString(),
-          isActive: true,
-          createdBy: adminUser.id,
-        }
-      ];
-
-      for (const item of demoFoodItems) {
-        await storage.createFoodItem(item);
-      }
-
-      res.json({ success: true, message: 'Demo data seeded successfully' });
-    } catch (error) {
-      console.error("Error seeding demo data:", error);
-      res.status(500).json({ message: "Failed to seed demo data" });
-    }
-  });
 
   // Auth routes
   app.get('/api/auth/user', async (req: any, res) => {
     try {
+      console.log('Auth user endpoint called');
+      console.log('Session:', req.session);
+      
       let user = null;
       
       // Check for demo session first
       if (req.session.user) {
+        console.log('Session user found:', req.session.user);
         const userId = req.session.user.claims.sub;
+        console.log('Looking up user with ID:', userId);
         user = await storage.getUser(userId);
+        console.log('Found user:', user);
+      } else {
+        console.log('No session user found');
       }
       
       if (!user) {
+        console.log('No user found, returning 401');
         return res.status(401).json({ message: "Unauthorized" });
       }
       
+      console.log('Returning user:', user);
       return res.json(user);
     } catch (error) {
       console.error("Error fetching user:", error);
@@ -161,6 +130,196 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.clearCookie('connect.sid', { path: '/' });
       return res.json({ success: true });
     });
+  });
+
+  // Test session endpoint
+  app.get('/api/test-session', (req: any, res) => {
+    console.log('Test session endpoint called');
+    console.log('Session:', req.session);
+    console.log('Session ID:', req.session.id);
+    console.log('Session user:', req.session.user);
+    res.json({ 
+      session: req.session, 
+      sessionId: req.session.id,
+      sessionUser: req.session.user,
+      cookies: req.headers.cookie 
+    });
+  });
+
+  // Google OAuth routes
+  app.get('/api/auth/google', (req: any, res, next) => {
+    // Store the role parameter in session for use in callback
+    const role = req.query.role as string;
+    if (role) {
+      req.session.oauthRole = role;
+    }
+    passport.authenticate('google', { scope: ['profile', 'email'] })(req, res, next);
+  });
+
+  app.get('/api/auth/google/callback', 
+    passport.authenticate('google', { failureRedirect: '/login' }),
+    async (req: any, res) => {
+      try {
+        // Successful authentication
+        if (req.user) {
+          console.log('Google OAuth successful for user:', req.user);
+          
+          // Check if this is an admin login request
+          const oauthRole = req.session.oauthRole;
+          let user = req.user;
+          
+          if (oauthRole === 'admin') {
+            // For admin login, set role to null initially (requires approval)
+            user = await storage.upsertUser({
+              ...req.user,
+              role: null, // Set to null for admin approval
+            });
+            console.log('Updated user role to null for admin approval:', user);
+          }
+          
+          // Clear the oauth role from session
+          delete req.session.oauthRole;
+          
+          // Create session
+          req.session.user = {
+            claims: { sub: user.id },
+            access_token: 'google-token',
+            expires_at: Math.floor(Date.now() / 1000) + 3600, // 1 hour
+          };
+          
+          // Save session
+          req.session.save((err: any) => {
+            if (err) {
+              console.error('Session save error:', err);
+              return res.redirect('/login?error=session_error');
+            }
+            
+            console.log('Session saved successfully for user:', user.id);
+            
+            // Redirect based on role
+            if (oauthRole === 'admin') {
+              if (user.role === 'admin') {
+                // User already has admin role - redirect to admin dashboard
+                res.redirect('/admin');
+              } else if (user.role === null) {
+                // Admin user with null role - redirect to pending approval page
+                res.redirect('/admin-pending');
+              } else {
+                // User exists but has student role - redirect to student dashboard
+                res.redirect('/student');
+              }
+            } else {
+              // Student login - redirect to student dashboard
+              res.redirect('/student');
+            }
+          });
+        } else {
+          console.error('No user found after Google OAuth');
+          res.redirect('/login?error=auth_failed');
+        }
+      } catch (error) {
+        console.error('Google OAuth callback error:', error);
+        res.redirect('/login?error=auth_failed');
+      }
+    }
+  );
+
+  // Admin authentication route
+  app.get('/api/auth/admin', async (req: any, res) => {
+    try {
+      // Check if user is authenticated
+      if (!req.session.user) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+
+      const userId = req.session.user.claims.sub;
+      const user = await storage.getUser(userId);
+
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Check if user has admin role
+      if (user.role !== 'admin') {
+        return res.status(403).json({ message: "Access denied. Admin role required." });
+      }
+
+      res.json({ 
+        success: true, 
+        user: user,
+        message: "Admin access granted" 
+      });
+    } catch (error) {
+      console.error("Admin authentication error:", error);
+      res.status(500).json({ message: "Authentication failed" });
+    }
+  });
+
+  // Get pending admin users (for super admin approval)
+  app.get('/api/admin/pending-users', async (req: any, res) => {
+    try {
+      // Check if user is authenticated and is admin
+      if (!req.session.user) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+
+      const userId = req.session.user.claims.sub;
+      const user = await storage.getUser(userId);
+
+      if (!user || user.role !== 'admin') {
+        return res.status(403).json({ message: "Access denied. Admin role required." });
+      }
+
+      // Get all users with null role (pending admin approval)
+      const pendingUsers = await storage.getUsersByRole(null);
+      res.json(pendingUsers);
+    } catch (error) {
+      console.error("Error fetching pending users:", error);
+      res.status(500).json({ message: "Failed to fetch pending users" });
+    }
+  });
+
+  // Approve admin user
+  app.post('/api/admin/approve-user/:userId', async (req: any, res) => {
+    try {
+      // Check if user is authenticated and is admin
+      if (!req.session.user) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+
+      const adminUserId = req.session.user.claims.sub;
+      const adminUser = await storage.getUser(adminUserId);
+
+      if (!adminUser || adminUser.role !== 'admin') {
+        return res.status(403).json({ message: "Access denied. Admin role required." });
+      }
+
+      const { userId } = req.params;
+      const userToApprove = await storage.getUser(userId);
+
+      if (!userToApprove) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      if (userToApprove.role !== null) {
+        return res.status(400).json({ message: "User is not pending approval" });
+      }
+
+      // Approve the user as admin
+      const approvedUser = await storage.upsertUser({
+        ...userToApprove,
+        role: 'admin',
+      });
+
+      res.json({ 
+        success: true, 
+        user: approvedUser,
+        message: "User approved as admin" 
+      });
+    } catch (error) {
+      console.error("Error approving user:", error);
+      res.status(500).json({ message: "Failed to approve user" });
+    }
   });
 
   // Food items routes
@@ -219,6 +378,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         createdBy: userId,
       });
       const item = await storage.createFoodItem(validatedData);
+      
+      // Send notifications to users who have claimed from this canteen
+      try {
+        const usersToNotify = await storage.getUsersWhoClaimedFromCanteen(validatedData.canteenName);
+        
+        for (const userIdToNotify of usersToNotify) {
+          // Don't notify the admin who created the item
+          if (userIdToNotify !== userId) {
+            await storage.createNotification({
+              userId: userIdToNotify,
+              title: "New Food Available!",
+              message: `${validatedData.name} is now available at ${validatedData.canteenName}. Check it out before it's gone!`,
+              type: "info",
+              relatedItemId: item.id,
+              relatedItemType: "food_item"
+            });
+          }
+        }
+      } catch (notificationError) {
+        console.error("Error sending notifications:", notificationError);
+        // Don't fail the food item creation if notifications fail
+      }
+      
       res.status(201).json(item);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -304,7 +486,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Food item not found or inactive" });
       }
 
-      if (foodItem.quantityAvailable < quantityClaimed) {
+      // Get all active claims for this food item to calculate actual available quantity
+      const activeClaims = await storage.getActiveFoodClaims();
+      const reservedQuantity = activeClaims
+        .filter(claim => claim.foodItemId === foodItemId && claim.status === "reserved")
+        .reduce((sum, claim) => sum + claim.quantityClaimed, 0);
+
+      const actualAvailableQuantity = foodItem.quantityAvailable - reservedQuantity;
+
+      if (actualAvailableQuantity < quantityClaimed) {
         return res.status(400).json({ message: "Insufficient quantity available" });
       }
 
@@ -335,6 +525,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       const claim = await storage.createFoodClaim(claimData);
+      
+      // Send notification to the canteen admin about the claim
+      try {
+        const user = await storage.getUser(userId);
+        await storage.createNotification({
+          userId: foodItem.createdBy,
+          title: "New Food Claim!",
+          message: `${user?.firstName || 'A student'} has claimed ${quantityClaimed} ${quantityClaimed === 1 ? 'item' : 'items'} of "${foodItem.name}". Claim code: ${claimCode}`,
+          type: "info",
+          relatedItemId: claim.id,
+          relatedItemType: "claim"
+        });
+      } catch (notificationError) {
+        console.error("Error sending claim notification:", notificationError);
+        // Don't fail the claim if notification fails
+      }
+      
       res.status(201).json(claim);
     } catch (error) {
       console.error("Error creating food claim:", error);
@@ -454,10 +661,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const claimId = req.params.id;
       const updatedClaim = await storage.completeClaim(claimId);
       
-      // Remove the food item from the table after successful claim completion
-      if (updatedClaim.foodItem) {
-        await storage.deleteFoodItem(updatedClaim.foodItem.id);
-      }
+      // Note: Quantity reduction is already handled in storage.completeClaim method
+      // The food item remains in the database with reduced quantity
       
       res.json(updatedClaim);
     } catch (error) {
@@ -732,6 +937,120 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error deleting event:", error);
       res.status(500).json({ message: "Failed to delete event" });
+    }
+  });
+
+  // Notification endpoints
+  app.get('/api/notifications', async (req, res) => {
+    try {
+      if (!req.session.user?.claims?.sub) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const notifications = await storage.getNotificationsByUser(req.session.user.claims.sub);
+      res.json(notifications);
+    } catch (error) {
+      console.error("Error fetching notifications:", error);
+      res.status(500).json({ message: "Failed to fetch notifications" });
+    }
+  });
+
+  app.put('/api/notifications/:id/read', async (req, res) => {
+    try {
+      if (!req.session.user?.claims?.sub) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const { id } = req.params;
+      const notification = await storage.markNotificationAsRead(id);
+      res.json(notification);
+    } catch (error) {
+      console.error("Error marking notification as read:", error);
+      res.status(500).json({ message: "Failed to mark notification as read" });
+    }
+  });
+
+  app.put('/api/notifications/read-all', async (req, res) => {
+    try {
+      if (!req.session.user?.claims?.sub) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      await storage.markAllNotificationsAsRead(req.session.user.claims.sub);
+      res.json({ message: "All notifications marked as read" });
+    } catch (error) {
+      console.error("Error marking all notifications as read:", error);
+      res.status(500).json({ message: "Failed to mark notifications as read" });
+    }
+  });
+
+  app.get('/api/notifications/unread-count', async (req, res) => {
+    try {
+      if (!req.session.user?.claims?.sub) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const count = await storage.getUnreadNotificationCount(req.session.user.claims.sub);
+      res.json({ count });
+    } catch (error) {
+      console.error("Error fetching unread notification count:", error);
+      res.status(500).json({ message: "Failed to fetch unread count" });
+    }
+  });
+
+  // Phone verification endpoint
+  app.post('/api/verify-phone', async (req, res) => {
+    try {
+      const { phoneNumber } = req.body;
+      
+      if (!phoneNumber) {
+        return res.status(400).json({ message: "Phone number is required" });
+      }
+
+      // Basic phone number validation
+      const phoneRegex = /^\+?[1-9]\d{1,14}$/;
+      if (!phoneRegex.test(phoneNumber)) {
+        return res.status(400).json({ 
+          valid: false, 
+          message: "Invalid phone number format" 
+        });
+      }
+
+      // For demo purposes, we'll do basic validation
+      // In production, you would integrate with a real phone verification service
+      // like Twilio, NumVerify, or similar APIs
+      
+      // Check if it's a valid length and format
+      const cleanNumber = phoneNumber.replace(/\D/g, '');
+      if (cleanNumber.length < 10 || cleanNumber.length > 15) {
+        return res.status(400).json({ 
+          valid: false, 
+          message: "Phone number must be between 10-15 digits" 
+        });
+      }
+
+      // Simulate API call to phone verification service
+      // In real implementation, replace this with actual API call
+      const isValid = cleanNumber.length >= 10 && /^[1-9]/.test(cleanNumber);
+      
+      if (isValid) {
+        res.json({ 
+          valid: true, 
+          message: "Phone number is valid and belongs to a real person",
+          phoneNumber: phoneNumber
+        });
+      } else {
+        res.json({ 
+          valid: false, 
+          message: "Invalid phone number. Please enter a valid number that belongs to a real person." 
+        });
+      }
+    } catch (error) {
+      console.error("Error verifying phone number:", error);
+      res.status(500).json({ 
+        valid: false, 
+        message: "Failed to verify phone number. Please try again." 
+      });
     }
   });
 

@@ -4,6 +4,7 @@ import {
   foodClaims,
   foodDonations,
   events,
+  notifications,
   type User,
   type UpsertUser,
   type FoodItem,
@@ -14,17 +15,21 @@ import {
   type InsertFoodDonation,
   type Event,
   type InsertEvent,
+  type Notification,
+  type InsertNotification,
   type FoodItemWithCreator,
   type FoodClaimWithDetails,
   type FoodDonationWithDetails,
   type EventWithCreator,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, gte, sql } from "drizzle-orm";
+import { eq, and, desc, gte, sql, isNull } from "drizzle-orm";
 
 export interface IStorage {
   // User operations (required for Replit Auth)
   getUser(id: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
+  getUsersByRole(role: string | null): Promise<User[]>;
   upsertUser(user: UpsertUser): Promise<User>;
 
   // Food item operations
@@ -101,6 +106,14 @@ export interface IStorage {
     carbonFootprintSaved: number;
     waterFootprintSaved: number;
   }>;
+
+  // Notification operations
+  createNotification(notification: InsertNotification): Promise<Notification>;
+  getNotificationsByUser(userId: string): Promise<Notification[]>;
+  markNotificationAsRead(notificationId: string): Promise<Notification>;
+  markAllNotificationsAsRead(userId: string): Promise<void>;
+  deleteNotification(notificationId: string): Promise<void>;
+  getUnreadNotificationCount(userId: string): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -108,6 +121,21 @@ export class DatabaseStorage implements IStorage {
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user;
+  }
+
+  async getUsersByRole(role: string | null): Promise<User[]> {
+    if (role === null) {
+      const userList = await db.select().from(users).where(isNull(users.role));
+      return userList;
+    } else {
+      const userList = await db.select().from(users).where(eq(users.role, role));
+      return userList;
+    }
   }
 
   async upsertUser(userData: UpsertUser): Promise<User> {
@@ -148,6 +176,7 @@ export class DatabaseStorage implements IStorage {
         updatedAt: foodItems.updatedAt,
         createdByUser: users,
         claimCount: sql<number>`(SELECT COUNT(*) FROM ${foodClaims} WHERE ${foodClaims.foodItemId} = ${foodItems.id} AND ${foodClaims.status} IN ('reserved', 'claimed'))`,
+        reservedQuantity: sql<number>`(SELECT COALESCE(SUM(${foodClaims.quantityClaimed}), 0) FROM ${foodClaims} WHERE ${foodClaims.foodItemId} = ${foodItems.id} AND ${foodClaims.status} = 'reserved')`,
       })
       .from(foodItems)
       .leftJoin(users, eq(foodItems.createdBy, users.id))
@@ -155,7 +184,6 @@ export class DatabaseStorage implements IStorage {
         and(
           eq(foodItems.isActive, true),
           gte(foodItems.availableUntil, now),
-          gte(foodItems.quantityAvailable, 1),
         ),
       )
       .orderBy(desc(foodItems.createdAt));
@@ -166,7 +194,7 @@ export class DatabaseStorage implements IStorage {
       description: item.description,
       canteenName: item.canteenName,
       canteenLocation: item.canteenLocation,
-      quantityAvailable: item.quantityAvailable,
+      quantityAvailable: item.quantityAvailable - Number(item.reservedQuantity), // Subtract reserved claims
       imageUrl: item.imageUrl,
       availableUntil: item.availableUntil,
       isActive: item.isActive,
@@ -213,15 +241,47 @@ export class DatabaseStorage implements IStorage {
     await db.delete(foodItems).where(eq(foodItems.id, id));
   }
 
-  async getFoodItemsByCreator(creatorId: string): Promise<FoodItem[]> {
+  async getFoodItemsByCreator(creatorId: string): Promise<FoodItemWithCreator[]> {
     // Update expired items status before fetching
     await this.updateExpiredItemsStatus();
 
-    return await db
-      .select()
+    const items = await db
+      .select({
+        id: foodItems.id,
+        name: foodItems.name,
+        description: foodItems.description,
+        canteenName: foodItems.canteenName,
+        canteenLocation: foodItems.canteenLocation,
+        quantityAvailable: foodItems.quantityAvailable,
+        imageUrl: foodItems.imageUrl,
+        availableUntil: foodItems.availableUntil,
+        isActive: foodItems.isActive,
+        createdBy: foodItems.createdBy,
+        createdAt: foodItems.createdAt,
+        updatedAt: foodItems.updatedAt,
+        createdByUser: users,
+        claimCount: sql<number>`(SELECT COUNT(*) FROM ${foodClaims} WHERE ${foodClaims.foodItemId} = ${foodItems.id} AND ${foodClaims.status} IN ('reserved', 'claimed'))`,
+      })
       .from(foodItems)
+      .leftJoin(users, eq(foodItems.createdBy, users.id))
       .where(eq(foodItems.createdBy, creatorId))
       .orderBy(desc(foodItems.createdAt));
+
+    return items.map(item => ({
+      id: item.id,
+      name: item.name,
+      description: item.description,
+      canteenName: item.canteenName,
+      canteenLocation: item.canteenLocation,
+      quantityAvailable: item.quantityAvailable,
+      imageUrl: item.imageUrl,
+      availableUntil: item.availableUntil,
+      isActive: item.isActive,
+      createdBy: item.createdByUser || { id: '', email: '', firstName: '', lastName: '', profileImageUrl: '', role: 'admin', studentId: '', phoneNumber: '', createdAt: null, updatedAt: null },
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+      claimCount: Number(item.claimCount),
+    })) as FoodItemWithCreator[];
   }
 
   // Food claim operations
@@ -230,14 +290,8 @@ export class DatabaseStorage implements IStorage {
   ): Promise<FoodClaim> {
     const [newClaim] = await db.insert(foodClaims).values(claim).returning();
 
-    // Update food item quantity
-    await db
-      .update(foodItems)
-      .set({
-        quantityAvailable: sql`quantity_available - ${claim.quantityClaimed}`,
-        updatedAt: new Date(),
-      })
-      .where(eq(foodItems.id, claim.foodItemId));
+    // Note: Quantity is NOT reduced here - it will be reduced when admin completes the claim
+    // This allows for verification before quantity reduction
 
     return newClaim;
   }
@@ -337,6 +391,8 @@ export class DatabaseStorage implements IStorage {
     claimedFood: number;
     carbonFootprintSaved: number;
     waterFootprintSaved: number;
+    currentlyActiveItems: number;
+    totalQuantityAvailable: number;
   }> {
     // Get total meals claimed
     const [mealsSaved] = await db
@@ -364,8 +420,30 @@ export class DatabaseStorage implements IStorage {
       .select({ totalQuantity: sql<number>`sum(quantity_available)` })
       .from(foodItems);
 
-    // Get wasted food (expired or expired claims)
+    // Get currently active food items count
     const now = new Date();
+    const [currentlyActiveItems] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(foodItems)
+      .where(
+        and(
+          eq(foodItems.isActive, true),
+          gte(foodItems.availableUntil, now.toISOString())
+        )
+      );
+
+    // Get total quantity currently available
+    const [totalQuantityAvailable] = await db
+      .select({ totalQuantity: sql<number>`sum(quantity_available)` })
+      .from(foodItems)
+      .where(
+        and(
+          eq(foodItems.isActive, true),
+          gte(foodItems.availableUntil, now.toISOString())
+        )
+      );
+
+    // Get wasted food (expired or expired claims)
     const [expiredClaims] = await db
       .select({ count: sql<number>`count(*)` })
       .from(foodClaims)
@@ -398,6 +476,8 @@ export class DatabaseStorage implements IStorage {
       claimedFood: claimedFood?.count || 0,
       carbonFootprintSaved,
       waterFootprintSaved,
+      currentlyActiveItems: currentlyActiveItems?.count || 0,
+      totalQuantityAvailable: totalQuantityAvailable?.totalQuantity || 0,
     };
   }
 
@@ -410,11 +490,43 @@ export class DatabaseStorage implements IStorage {
 
   // Complete a claim (mark as collected)
   async completeClaim(claimId: string): Promise<FoodClaimWithDetails> {
+    // First get the claim details to know the food item and quantity
+    const claimDetails = await db
+      .select({
+        id: foodClaims.id,
+        foodItemId: foodClaims.foodItemId,
+        quantityClaimed: foodClaims.quantityClaimed,
+        status: foodClaims.status,
+      })
+      .from(foodClaims)
+      .where(eq(foodClaims.id, claimId))
+      .limit(1);
+
+    if (!claimDetails[0]) {
+      throw new Error("Claim not found");
+    }
+
+    const claim = claimDetails[0];
+
+    // Check if claim is in reserved status
+    if (claim.status !== "reserved") {
+      throw new Error("Claim is not in reserved status");
+    }
+
     // Update the claim status to 'claimed'
     await this.updateFoodClaimStatus(claimId, "claimed", new Date());
 
+    // Reduce the food item quantity when admin completes the claim
+    await db
+      .update(foodItems)
+      .set({
+        quantityAvailable: sql`quantity_available - ${claim.quantityClaimed}`,
+        updatedAt: new Date(),
+      })
+      .where(eq(foodItems.id, claim.foodItemId));
+
     // Return the updated claim with full details
-    const claim = await db
+    const fullClaim = await db
       .select({
         id: foodClaims.id,
         userId: foodClaims.userId,
@@ -458,11 +570,11 @@ export class DatabaseStorage implements IStorage {
       .where(eq(foodClaims.id, claimId))
       .limit(1);
 
-    if (!claim[0]) {
+    if (!fullClaim[0]) {
       throw new Error("Claim not found after completion");
     }
 
-    return claim[0] as FoodClaimWithDetails;
+    return fullClaim[0] as FoodClaimWithDetails;
   }
 
   // Check if user has already claimed a specific food item
@@ -705,6 +817,61 @@ export class DatabaseStorage implements IStorage {
 
   async deleteEvent(id: string): Promise<void> {
     await db.delete(events).where(eq(events.id, id));
+  }
+
+  // Notification operations
+  async createNotification(notification: InsertNotification): Promise<Notification> {
+    const [newNotification] = await db.insert(notifications).values(notification).returning();
+    return newNotification;
+  }
+
+  async getNotificationsByUser(userId: string): Promise<Notification[]> {
+    return await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.userId, userId))
+      .orderBy(desc(notifications.createdAt));
+  }
+
+  async markNotificationAsRead(notificationId: string): Promise<Notification> {
+    const [notification] = await db
+      .update(notifications)
+      .set({ isRead: true })
+      .where(eq(notifications.id, notificationId))
+      .returning();
+    return notification;
+  }
+
+  async markAllNotificationsAsRead(userId: string): Promise<void> {
+    await db
+      .update(notifications)
+      .set({ isRead: true })
+      .where(eq(notifications.userId, userId));
+  }
+
+  async deleteNotification(notificationId: string): Promise<void> {
+    await db.delete(notifications).where(eq(notifications.id, notificationId));
+  }
+
+  async getUnreadNotificationCount(userId: string): Promise<number> {
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(notifications)
+      .where(and(eq(notifications.userId, userId), eq(notifications.isRead, false)));
+    return result[0]?.count || 0;
+  }
+
+  // Get users who have claimed from a specific canteen
+  async getUsersWhoClaimedFromCanteen(canteenName: string): Promise<string[]> {
+    const result = await db
+      .select({ userId: foodClaims.userId })
+      .from(foodClaims)
+      .innerJoin(foodItems, eq(foodClaims.foodItemId, foodItems.id))
+      .where(eq(foodItems.canteenName, canteenName));
+    
+    // Remove duplicates using Set
+    const uniqueUserIds = Array.from(new Set(result.map(r => r.userId)));
+    return uniqueUserIds;
   }
 }
 

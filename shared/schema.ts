@@ -32,7 +32,7 @@ export const users = pgTable("users", {
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
-  role: varchar("role").notNull().default("student"), // student or admin
+  role: varchar("role").default("student"), // student, admin, or null (pending approval)
   studentId: varchar("student_id"),
   phoneNumber: varchar("phone_number"),
   createdAt: timestamp("created_at").defaultNow(),
@@ -98,6 +98,19 @@ export const events = pgTable("events", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Notifications table
+export const notifications = pgTable("notifications", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  title: varchar("title", { length: 255 }).notNull(),
+  message: text("message").notNull(),
+  type: varchar("type", { length: 50 }).notNull().default("info"), // info, success, warning, error
+  isRead: boolean("is_read").notNull().default(false),
+  relatedItemId: uuid("related_item_id"), // Optional reference to food item, claim, etc.
+  relatedItemType: varchar("related_item_type", { length: 50 }), // food_item, claim, etc.
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   foodItems: many(foodItems),
@@ -139,6 +152,13 @@ export const eventsRelations = relations(events, ({ one }) => ({
   }),
 }));
 
+export const notificationsRelations = relations(notifications, ({ one }) => ({
+  user: one(users, {
+    fields: [notifications.userId],
+    references: [users.id],
+  }),
+}));
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).pick({
   email: true,
@@ -174,6 +194,11 @@ export const insertEventSchema = createInsertSchema(events).omit({
   updatedAt: true,
 });
 
+export const insertNotificationSchema = createInsertSchema(notifications).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -185,6 +210,8 @@ export type InsertFoodDonation = z.infer<typeof insertFoodDonationSchema>;
 export type FoodDonation = typeof foodDonations.$inferSelect;
 export type InsertEvent = z.infer<typeof insertEventSchema>;
 export type Event = typeof events.$inferSelect;
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type Notification = typeof notifications.$inferSelect;
 
 // Extended types with relations
 export type FoodItemWithCreator = FoodItem & {
