@@ -75,7 +75,7 @@ export function Navbar() {
                   {user.role === "admin" && (
                     <Link href="/admin">
                       <Button className="bg-forest/10 hover:bg-forest/20 text-forest dark:bg-forest/20 dark:hover:bg-forest/30 dark:text-forest-light border-forest/20 px-4 py-2 rounded-xl font-medium transition-all duration-300 hover:scale-105">
-                        Admin Dashboard
+                        Dashboard
                       </Button>
                     </Link>
                   )}
