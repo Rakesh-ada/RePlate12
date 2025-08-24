@@ -220,12 +220,7 @@ export default function Login() {
                         <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/20 rounded-full flex items-center justify-center mx-auto mb-4">
                           <Shield className="w-6 h-6 text-purple-600 dark:text-purple-400" />
                         </div>
-                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                          Admin Access Required
-                        </h3>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
-                          Please enter the admin password to continue
-                        </p>
+                       
                       </div>
 
                       <div className="space-y-4">

@@ -71,7 +71,7 @@ export default function Landing() {
               >
                 <span className="relative flex items-center">
                   Learn More
-                  <span className="ml-2 transform group-hover:translate-y-1 transition-transform duration-300">↓</span>
+                  
                 </span>
               </Button>
             </div>
