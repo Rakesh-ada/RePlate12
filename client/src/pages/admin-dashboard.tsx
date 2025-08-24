@@ -1107,9 +1107,6 @@ export default function AdminDashboard() {
                                   <span className="text-gray-900 dark:text-white font-medium">
                                     {item.quantityAvailable}
                                   </span>
-                                  {item.quantityAvailable === 0 && (
-                                    <span className="text-xs text-green-600">All claimed</span>
-                                  )}
                                 </div>
                               </TableCell>
                               <TableCell className="text-sm">
