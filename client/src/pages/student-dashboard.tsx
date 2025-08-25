@@ -169,9 +169,9 @@ export default function StudentDashboard() {
 
         <Tabs defaultValue="browse" className="space-y-6">
           <div className="flex flex-row items-center justify-between gap-2 sm:gap-4">
-            <TabsList className="grid grid-cols-2 flex-1 sm:w-auto sm:max-w-md">
-              <TabsTrigger value="browse" className="text-xs sm:text-sm md:text-base">Browse Meals</TabsTrigger>
-              <TabsTrigger value="claims" className="text-xs sm:text-sm md:text-base">My Claims</TabsTrigger>
+            <TabsList className="grid grid-cols-2 flex-1 sm:w-auto sm:max-w-md p-1 rounded-xl bg-transparent">
+              <TabsTrigger value="browse" className="text-xs sm:text-sm md:text-base px-4 py-2 rounded-lg data-[state=active]:bg-forest data-[state=active]:text-white dark:data-[state=active]:bg-forest data-[state=active]:ring-1 data-[state=active]:ring-forest">Browse Meals</TabsTrigger>
+              <TabsTrigger value="claims" className="text-xs sm:text-sm md:text-base px-4 py-2 rounded-lg data-[state=active]:bg-forest data-[state=active]:text-white dark:data-[state=active]:bg-forest data-[state=active]:ring-1 data-[state=active]:ring-forest">My Claims</TabsTrigger>
             </TabsList>
 
             {/* Filters */}
