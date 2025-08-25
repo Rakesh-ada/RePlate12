@@ -184,6 +184,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
               role: 'admin', // Directly assign admin role
             });
             console.log('Updated user role to admin:', user);
+          } else if (oauthRole === 'student') {
+            // For student login, explicitly assign student role
+            user = await storage.upsertUser({
+              ...req.user,
+              role: 'student', // Explicitly assign student role
+            });
+            console.log('Updated user role to student:', user);
           }
           
           // Clear the oauth role from session

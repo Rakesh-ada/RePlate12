@@ -177,6 +177,7 @@ export class DatabaseStorage implements IStorage {
         createdByUser: users,
         claimCount: sql<number>`(SELECT COUNT(*) FROM ${foodClaims} WHERE ${foodClaims.foodItemId} = ${foodItems.id} AND ${foodClaims.status} IN ('reserved', 'claimed'))`,
         reservedQuantity: sql<number>`(SELECT COALESCE(SUM(${foodClaims.quantityClaimed}), 0) FROM ${foodClaims} WHERE ${foodClaims.foodItemId} = ${foodItems.id} AND ${foodClaims.status} = 'reserved')`,
+        claimedQuantity: sql<number>`(SELECT COALESCE(SUM(${foodClaims.quantityClaimed}), 0) FROM ${foodClaims} WHERE ${foodClaims.foodItemId} = ${foodItems.id} AND ${foodClaims.status} = 'claimed')`,
       })
       .from(foodItems)
       .leftJoin(users, eq(foodItems.createdBy, users.id))
@@ -194,7 +195,7 @@ export class DatabaseStorage implements IStorage {
       description: item.description,
       canteenName: item.canteenName,
       canteenLocation: item.canteenLocation,
-      quantityAvailable: item.quantityAvailable - Number(item.reservedQuantity), // Subtract reserved claims
+      quantityAvailable: item.quantityAvailable, // Show total physical quantity, not accounting for reservations
       imageUrl: item.imageUrl,
       availableUntil: item.availableUntil,
       isActive: item.isActive,

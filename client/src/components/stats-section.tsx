@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
-import { Utensils, Users, Store, DollarSign } from "lucide-react";
+import { Utensils, Users, Store, Leaf } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface CampusStats {
@@ -80,10 +80,10 @@ export function StatsSection() {
       iconColor: "text-forest",
     },
     {
-      icon: DollarSign,
-      value: `${Math.round(stats?.totalSavings || 0).toLocaleString()}`,
-      label: "Student Savings",
-      period: "Total saved",
+      icon: Leaf,
+      value: `${Math.round(stats?.carbonFootprintSaved || 0).toLocaleString()}`,
+      label: "Carbon Saved",
+      period: "kg CO2 reduced",
       bgColor: "bg-forest/10",
       iconColor: "text-forest",
     },
@@ -121,10 +121,10 @@ export function StatsSection() {
               
               <CardContent className="relative p-8">
                 <div className="flex items-start justify-between mb-6">
-                  <div className={`w-16 h-16 ${stat.bgColor} rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 group-hover:bg-forest/20 dark:group-hover:bg-forest/30 transition-all duration-300`}>
-                    <stat.icon className={`${stat.iconColor} w-8 h-8 group-hover:text-forest dark:group-hover:text-forest-light transition-colors duration-300`} />
+                  <div className={`w-16 h-16 ${stat.bgColor} rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 group-hover:bg-forest/20 dark:group-hover:bg-forest/30 transition-all duration-300 relative z-10`}>
+                    <stat.icon className={`${stat.iconColor} w-8 h-8 group-hover:text-forest dark:group-hover:text-forest-light dark:text-forest-light transition-colors duration-300`} />
                   </div>
-                  <div className="text-right">
+                  <div className="text-right relative z-10">
                     <span className="text-3xl lg:text-4xl font-bold bg-gradient-to-r from-gray-900 to-forest dark:from-white dark:to-forest-light bg-clip-text text-transparent block">
                       {stat.value}
                     </span>
@@ -133,16 +133,16 @@ export function StatsSection() {
                 </div>
                 
                 <div className="space-y-2">
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-white group-hover:text-forest dark:group-hover:text-forest-light transition-colors duration-300">
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white group-hover:text-forest dark:group-hover:text-forest-light transition-colors duration-300 relative z-10">
                     {stat.label}
                   </h3>
-                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300 uppercase tracking-wider transition-colors duration-300 relative z-10">
                     {stat.period}
                   </p>
                 </div>
 
                 {/* Hover effect overlay */}
-                <div className="absolute inset-0 bg-gradient-to-br from-forest/10 to-forest/5 dark:from-forest/25 dark:to-forest/15 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+                <div className="absolute inset-0 bg-gradient-to-br from-forest/10 to-forest/5 dark:from-forest/10 dark:to-forest/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
               </CardContent>
             </Card>
           ))}

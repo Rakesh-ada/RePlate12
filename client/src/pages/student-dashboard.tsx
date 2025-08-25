@@ -168,20 +168,20 @@ export default function StudentDashboard() {
         </div>
 
         <Tabs defaultValue="browse" className="space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <TabsList className="grid grid-cols-2 max-w-md">
-              <TabsTrigger value="browse">Browse Meals</TabsTrigger>
-              <TabsTrigger value="claims">My Claims</TabsTrigger>
+          <div className="flex flex-row items-center justify-between gap-2 sm:gap-4">
+            <TabsList className="grid grid-cols-2 flex-1 sm:w-auto sm:max-w-md">
+              <TabsTrigger value="browse" className="text-xs sm:text-sm md:text-base">Browse Meals</TabsTrigger>
+              <TabsTrigger value="claims" className="text-xs sm:text-sm md:text-base">My Claims</TabsTrigger>
             </TabsList>
 
             {/* Filters */}
-            <div className="flex flex-wrap gap-4">
+            <div className="flex flex-wrap gap-2 sm:gap-4">
               <Select value={canteenFilter} onValueChange={setCanteenFilter}>
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="All Canteens" />
+                <SelectTrigger className="flex-1 sm:w-48 text-xs sm:text-sm md:text-base">
+                  <SelectValue placeholder="Canteens" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Canteens</SelectItem>
+                  <SelectItem value="all">Canteens</SelectItem>
                   {canteens.map(canteen => (
                     <SelectItem key={canteen} value={canteen}>
                       {canteen}
